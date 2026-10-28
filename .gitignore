@@ -18,7 +18,7 @@
 /docs/*
 !/docs/public/
 # Environments and transient files
-/renderer/node_modules/
+/renderer/node_modules
 .venv*/
 __pycache__/
 *.py[cod]
