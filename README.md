@@ -164,7 +164,7 @@ cd xue-yi-cheng-pian-agent
 python3 -m video_agent web --port 8765
 ```
 
-打开 **http://127.0.0.1:8765**。macOS 也可双击 `启动工作台.command`。
+打开 [本地工作台（127.0.0.1:8765）](http://127.0.0.1:8765)。macOS 也可双击 `启动工作台.command`。
 
 - 点击「载入三镜交互练习」可打开仓库自带的原创文字分镜，不调用模型、不包含个人素材。
 - 点击「新建学习视频」，导入 [examples/handoff.md](examples/handoff.md) 或自己的 Markdown。
