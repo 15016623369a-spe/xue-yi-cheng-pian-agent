@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "project_id": "public-example",
+  "title": "新学习视频",
+  "settings": {
+    "width": 1280,
+    "height": 720,
+    "fps": 30,
+    "sample_rate": 24000,
+    "maximum_seconds": 240
+  },
+  "theme": {
+    "label": "学习分享",
+    "series": "学习笔记",
+    "side_label": "本节重点"
+  },
+  "voice": {
+    "provider": "qwen3_local",
+    "profile": "my-authorized-voice",
+    "conditioning": "icl",
+    "language": "chinese",
+    "reference_audio": "../assets/voice/reference.wav",
+    "reference_text": "../assets/voice/reference.txt",
+    "speed": 1.18,
+    "volume": 1
+  },
+  "assets": {},
+  "sfx_volume": 0.045,
+  "source": "handoff.md",
+  "scenes": []
+}

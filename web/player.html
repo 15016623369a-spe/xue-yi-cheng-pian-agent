@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>视频预览 · 学以成片</title>
+  <link rel="stylesheet" href="/player.css">
+  <script src="/player.js" defer></script>
+</head>
+<body>
+  <main class="player-page">
+    <header>
+      <a id="back-link" href="/">← 返回工作台</a>
+      <p class="eyebrow">学以成片 · 视频预览</p>
+      <h1 id="player-title">正在打开视频…</h1>
+      <p id="player-version" class="muted"></p>
+    </header>
+    <aside id="version-context" class="version-context hidden" aria-label="视频版本提示">
+      <p id="version-notice"></p>
+      <a id="latest-preview" class="hidden">打开最新试做</a>
+    </aside>
+    <video id="preview-video" controls playsinline preload="metadata" aria-label="生成的视频预览"></video>
+    <div class="player-actions">
+      <button id="play-video" type="button" disabled>播放</button>
+      <button id="reload-video" class="secondary" type="button" disabled>重新加载</button>
+      <a id="download-video" class="secondary hidden" download="video.mp4">下载视频</a>
+    </div>
+    <p id="player-status" role="status" aria-live="polite">正在读取视频信息…</p>
+    <p class="muted">播放检查配音、字幕与画面，也可以下载后用本机播放器观看。</p>
+    <noscript>请开启浏览器 JavaScript 后重新打开播放页。</noscript>
+  </main>
+</body>
+</html>

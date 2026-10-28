@@ -1,0 +1,10 @@
+{
+  "provider": "qwen3_local",
+  "profile": "my-authorized-voice",
+  "conditioning": "icl",
+  "language": "chinese",
+  "reference_audio": "../assets/voice/reference.wav",
+  "reference_text": "../assets/voice/reference.txt",
+  "speed": 1.18,
+  "volume": 1
+}

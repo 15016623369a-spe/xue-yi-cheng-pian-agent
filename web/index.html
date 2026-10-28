@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>学以成片 · 本地创作工作台</title><meta name="description" content="把每天学会的知识，转成值得被看懂的视频。"><link rel="stylesheet" href="/style.css"></head>
+<body>
+<aside class="sidebar">
+  <a href="/" class="brand"><span class="brand-mark">↗</span><span>学以成片<small>LEARN → CREATE</small></span></a>
+  <button class="primary full" id="new-project">＋ 新建学习视频</button>
+  <button class="secondary full library-entry" id="library-button">▦ 资源库</button>
+  <div class="side-label">我的创作 <span id="project-count">0</span></div><nav id="project-list" aria-label="项目"></nav>
+  <button class="sample-button" id="load-sample">◫ 载入三镜交互练习</button>
+  <footer class="side-footer"><span class="online-dot"></span> 本地工作区<button class="text-button" id="settings-button">模型设置 ↗</button><small>内容在本机保存 · 由你上传发布</small></footer>
+</aside>
+<main>
+ <header class="topbar"><span id="breadcrumb">工作台 / 新建内容</span><span class="local-badge">LOCAL WORKSPACE <i></i></span></header>
+ <div class="content">
+  <section class="hero"><div><div class="eyebrow">每天学一点，也让别人看懂一点</div><h1 id="page-title">让今天学会的，成为下一条视频。</h1><p id="page-description">从一份学习笔记开始，把知识、表达和制作放在同一个工作台。</p></div><div class="hero-number">MD<span>→</span>VIDEO</div></section>
+  <div id="workflow" class="workflow hidden" aria-label="制作步骤"></div>
+  <div id="project-toolbar" class="toolbar hidden"><span id="save-state"></span><div><button id="download-md" class="secondary">导出工作表 MD</button><button id="save-project" class="primary">保存修改</button></div></div>
+  <section id="workspace"></section>
+  <section class="jobs-section"><div class="section-heading"><h2>制作动态</h2><span>关闭页面后，任务仍在本机后台运行</span></div><div id="jobs"><div class="empty-jobs">还没有任务。先导入笔记，或载入三镜练习试一试。</div></div></section>
+ </div>
+</main>
+<dialog id="settings-dialog"><form id="settings-form"><div class="dialog-heading"><div><div class="eyebrow">MODEL CONNECTION</div><h2>连接你的文字模型</h2></div><button type="button" class="icon-button" id="close-settings" aria-label="关闭">×</button></div><p class="muted">支持 Chat Completions 兼容接口。这里只负责知识与分镜改编，配音继续使用本机环境。</p>
+ <label>API 基础地址<input name="base_url" type="url" placeholder="https://服务商地址/v1" required></label>
+ <label>模型名<input name="model" placeholder="填写服务商提供的模型 ID" required></label>
+ <label>API 密钥<input name="api_key" type="password" autocomplete="new-password" placeholder="仅保存到本机；留空保留已有密钥"></label><small id="key-status"></small>
+ <div class="field-row"><label>单次输出 token 上限<input name="max_output_tokens" type="number" min="256" max="16000" value="8000"></label><label>上限参数<select name="token_parameter"><option value="max_tokens">max_tokens（常见兼容接口）</option><option value="max_completion_tokens">max_completion_tokens</option></select></label></div>
+ <label class="check"><input name="json_mode" type="checkbox" checked>启用 JSON 模式（接口不支持时可关闭）</label>
+ <details><summary>可选：记录成本与清除密钥</summary><p class="muted">按你填写的每百万 token 单价估算，币种由服务商决定；留空只记录 token，不编造费用。</p><div class="field-row"><label>输入单价<input name="input_price" type="number" min="0" step="any"></label><label>输出单价<input name="output_price" type="number" min="0" step="any"></label></div><label class="check"><input name="clear_key" type="checkbox">清除本机已保存的密钥</label></details>
+ <p class="note">密钥不回传到页面、不进入课程或日志；本机配置文件只允许当前用户读取。点击生成分镜时，学习 MD 和制作要求会发送给此 API。</p><div class="dialog-actions"><button class="secondary" type="button" id="test-model">保存并测试连接</button><button class="primary" type="submit">保存设置</button></div></form></dialog>
+<dialog id="library-dialog" class="resource-dialog"><div class="dialog-heading"><div><div class="eyebrow">YOUR CREATIVE RESOURCES</div><h2>资源库</h2></div><button class="icon-button" id="close-library" aria-label="关闭资源库">×</button></div><div id="library-body"></div></dialog>
+<div id="toast" role="status" class="toast hidden"></div>
+<script src="/library.js"></script>
+<script src="/app.js"></script>
+</body></html>

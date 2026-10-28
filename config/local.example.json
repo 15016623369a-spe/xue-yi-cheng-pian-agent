@@ -1,0 +1,11 @@
+{
+  "ffmpeg": "/absolute/path/to/ffmpeg",
+  "ffprobe": "/absolute/path/to/ffprobe",
+  "node": "/absolute/path/to/node",
+  "voice_python": "/absolute/path/to/existing/voice/.venv/bin/python",
+  "remotion_root": "/absolute/path/to/existing/remotion",
+  "browser": "/absolute/path/to/chrome-headless-shell",
+  "voice_model": "/absolute/path/to/local/Qwen3-TTS-model",
+  "asr_model": "/absolute/path/to/local/Whisper-model",
+  "hf_home": "/absolute/path/to/existing/hf-cache"
+}

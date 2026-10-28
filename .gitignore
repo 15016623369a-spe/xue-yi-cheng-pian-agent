@@ -1,0 +1,34 @@
+# Local settings, credentials and private speaker profiles
+/config/local.json
+/config/default-voice.json
+/.web/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Private lessons, media, installed models and generated outputs
+/projects/
+/assets/
+/outputs/
+/models/
+/work/
+/AGENTS.md
+# Historical personal reports remain on this machine
+/docs/*
+!/docs/public/
+# Environments and transient files
+/renderer/node_modules/
+.venv*/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.DS_Store
+*.sqlite3*
+*.log
+*.mp4
+*.mov
+*.wav
+*.mp3
+*.m4a
+*.safetensors

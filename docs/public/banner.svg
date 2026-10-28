@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="370" viewBox="0 0 1280 370" role="img" aria-labelledby="title desc">
+<title id="title">学以成片 · 短视频教学 Agent</title><desc id="desc">从学习笔记到教学视频：知识、分镜、配音、成片。</desc>
+<rect width="1280" height="370" rx="24" fill="#153e33"/>
+<circle cx="1168" cy="60" r="204" fill="#1c5142"/>
+<circle cx="1253" cy="338" r="182" fill="#245c48"/>
+<path d="M1015 214V118h96m-91 91 115-115" fill="none" stroke="#d7eeb7" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+<g font-family="system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+<text x="64" y="66" font-size="17" font-weight="600" letter-spacing="4" fill="#b6d5c5">LEARN → CREATE</text>
+<text x="60" y="155" font-size="68" font-weight="750" fill="#ffffff">学以成片</text>
+<text x="64" y="207" font-size="27" fill="#dce8dd">把学到的知识，变成别人愿意看的教学视频</text>
+<rect x="64" y="261" width="653" height="54" rx="14" fill="#245747"/>
+<text x="88" y="296" font-size="22" fill="#e6f1dc">学习 MD　→　知识　→　分镜　→　配音　→　成片</text>
+</g></svg>
