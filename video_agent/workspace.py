@@ -122,12 +122,9 @@ class Workspace:
         config["source"]="handoff.md"
         config["scenes"]=[]
         config["title"]="新学习视频"
-        if private_fixture:
-            config["theme"]={"label":"Agent 学习","series":"Transformer 基础","side_label":"本节重点"}
-        opening=self.root/"assets/series-opening.mp4"
-        if opening.is_file():
-            config["assets"]["series_opening"]=str(opening)
-            config["opening"]={"asset":"series_opening","captions":read_json(self.root/"assets/series-opening.json")["captions"]}
+        # A visual/voice preset does not select a course or its spoken opening.
+        config["theme"]={"label":"学习分享","series":"本期内容","side_label":"本期重点"}
+        config.pop("opening",None)
         return config
 
     def create(self,data):
@@ -241,15 +238,13 @@ class Workspace:
             seconds=doc["brief"].get("seconds")
             if type(seconds)!=int or not 20<=seconds<=240:
                 raise ValueError("目标时长需为 20–240 秒")
-            if doc["brief"]["style"]!="cs":
-                doc["config"]["theme"]={"label":"学习笔记","series":"知识图解","side_label":"本节重点"}
-                doc["config"].pop("opening",None)
-            else:
-                doc["config"]["theme"]=doc["config"].get("theme") or {"label":"Agent 学习","series":"Transformer 基础","side_label":"本节重点"}
+            doc["config"]["theme"]=doc["config"].get("theme") or {"label":"学习分享","series":"本期内容","side_label":"本期重点"}
             if doc["knowledge"]:
                 validate_knowledge(doc["knowledge"],doc["source"])
             if "media" in changes:
                 m=changes["media"]
+                if type(m.get('forget_opening',False))!=bool:raise ValueError('移除片头选项不正确')
+                if m.get('forget_opening') and m.get('opening'):raise ValueError('不能同时启用和移除片头')
                 speed=m.get("speed",1.18);volume=m.get("bgm_db",-24)
                 voice_volume=m.get("voice_volume",doc["config"]["voice"].get("volume",1))
                 if not isinstance(speed,(int,float)) or isinstance(speed,bool) or not .5<=speed<=2:
@@ -262,12 +257,18 @@ class Workspace:
                 doc["config"]["voice"]["volume"]=voice_volume
                 doc["config"]["bgm"]={"asset":"bgm","relative_db":volume} if m.get("bgm",True) else {}
                 if m.get("opening",False):
-                    opening=doc["config"].get("opening") or self.preset(self.path(pid)).get("opening")
+                    opening=doc["config"].get("opening") or doc.get("opening_selection")
                     if not opening:
-                        raise ValueError("系列片头素材尚未配置")
+                        raise ValueError("尚未选择本期片头，请先查找并接入素材")
                     doc["config"]["opening"]=opening
                 else:
+                    if doc["config"].get("opening"):
+                        doc["opening_selection"]=copy.deepcopy(doc["config"]["opening"])
                     doc["config"].pop("opening",None)
+                if m.get('forget_opening'):
+                    doc.pop('opening_selection',None)
+                    if doc['config'].get('theme',{}).get('series')=='Transformer 基础':
+                        doc['config']['theme']={"label":"学习分享","series":"本期内容","side_label":"本期重点"}
             if doc.get("storyboard"):
                 doc["config"]=self.compile(doc)
                 doc["title"]=doc["storyboard"]["title"]

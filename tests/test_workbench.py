@@ -154,8 +154,9 @@ class WorkbenchTests(unittest.TestCase):
         stored=json.loads(target.read_text());stored["result"]["knowledge"]["title"]="tampered"
         target.write_text(json.dumps(stored))
         with patch("video_agent.planning.call_model",side_effect=[(d["knowledge"],{}),(d["storyboard"],{})]) as model:
-            plan(d["source"],d["brief"],{"model":"test"},cache,validate)
-            self.assertEqual(model.call_count,2)
+            restored=plan(d["source"],d["brief"],{"model":"test"},cache,validate)
+            self.assertEqual(restored["knowledge"],result["knowledge"])
+            self.assertEqual(model.call_count,0)
 
     def test_model_repair_is_bounded(self):
         d=self.ws.sample()

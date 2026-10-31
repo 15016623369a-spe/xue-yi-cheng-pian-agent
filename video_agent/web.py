@@ -89,6 +89,10 @@ class Handler(BaseHTTPRequestHandler):
                 if cover_match[2]:
                     return self.stream_file(covers.image_path(ws,cover_match[1],cover_match[2]),"image.png")
                 return self.send_json(covers.load(ws,cover_match[1]))
+            opening_match=re.fullmatch(r"/api/projects/(web-[a-f0-9]{12})/openings",path)
+            if opening_match:
+                from .openings import latest
+                return self.send_json(latest(ws,opening_match[1]))
             asset_match=re.fullmatch(r"/api/projects/(web-[a-f0-9]{12})/assets/([A-Za-z0-9_-]+)",path)
             if asset_match:
                 from .util import resolve_path
@@ -107,7 +111,7 @@ class Handler(BaseHTTPRequestHandler):
                 job=jobs.progress(m[1])
                 if m[2]:return self.job_file(job,m[2])
                 return self.send_json(job)
-            static={"/":"index.html","/app.js":"app.js","/library.js":"library.js","/style.css":"style.css",
+            static={"/":"index.html","/app.js":"app.js","/library.js":"library.js","/opening.js":"opening.js","/style.css":"style.css",
                     "/player.html":"player.html","/player.js":"player.js","/player.css":"player.css"}
             if path not in static:return self.send_json({"error":"页面不存在"},404)
             p=ROOT/"web"/static[path]
@@ -143,6 +147,9 @@ class Handler(BaseHTTPRequestHandler):
             cover_match=re.fullmatch(r"/api/projects/(web-[a-f0-9]{12})/cover",path)
             if cover_match:
                 return self.send_json(jobs.create("cover",cover_match[1],cover=data),202)
+            opening_match=re.fullmatch(r"/api/projects/(web-[a-f0-9]{12})/openings",path)
+            if opening_match:
+                return self.send_json(jobs.create("opening",opening_match[1],data.get("revision"),opening=data),202)
             if path=="/api/settings":return self.send_json(ws.save_settings(data))
             if path=="/api/settings/test":return self.send_json(jobs.create("test"),202)
             if path=="/api/projects":return self.send_json(ws.create(data),201)

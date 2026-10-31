@@ -83,6 +83,8 @@ class Store:
         self.db.commit()
         work = self.root / "staging" / f"{key}-{uuid.uuid4().hex}"
         emit("stage_started", stage=stage, cached=bool(manifest))
+        if folder.exists() and manifest is None:
+            emit("stage_recovery",stage=stage,reason="缓存完整性校验失败，自动重建本阶段")
         try:
             if manifest is None:
                 work.mkdir(parents=True)

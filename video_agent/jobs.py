@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .planning import call_model, plan
 from .util import digest, read_json, write_json
-from .workspace import LOCK, Workspace
+from .workspace import Conflict, LOCK, Workspace
 
 
 class Jobs:
@@ -63,9 +63,9 @@ class Jobs:
                 items.append(item)
         return sorted(items,key=lambda x:x["created"],reverse=True)[:50]
 
-    def create(self,kind,pid=None,revision=None,scene_id=None,cover=None,online=True):
+    def create(self,kind,pid=None,revision=None,scene_id=None,cover=None,online=True,opening=None):
         with LOCK:
-            if kind not in {"plan","render","test","cover","materials"}:
+            if kind not in {"plan","render","test","cover","materials","opening"}:
                 raise ValueError("不支持的任务类型")
             doc=None
             if kind=="cover":
@@ -77,7 +77,7 @@ class Jobs:
                     raise ValueError("请填写封面设置")
                 cover_input=prepare(self.ws,pid,cover.get("revision"),cover.get("settings"))
                 revision=doc["revision"]
-            if kind in {"plan","render","materials"}:
+            if kind in {"plan","render","materials","opening"}:
                 doc=self.ws.get(pid)
                 if doc["revision"]!=revision:
                     raise ValueError("请先保存并刷新至最新项目版本")
@@ -85,6 +85,10 @@ class Jobs:
                     raise ValueError("该项目已有后台任务，请等待完成后再开始")
             if kind in {"plan","test","materials"} and not self.ws.settings()["configured"]:
                 raise ValueError("请先配置模型 API；不会用假分镜代替模型结果")
+            if kind=="opening":
+                from .openings import criteria, import_options
+                if not isinstance(opening,dict) or opening.get("mode") not in {"search","search_apply","import"}:raise ValueError("请选择检索或导入片头")
+                opening_input={"mode":opening["mode"],"data":(criteria if opening["mode"] in {"search","search_apply"} else import_options)(opening.get("data"))}
             if kind=="materials":
                 if not doc.get("storyboard"):raise ValueError("请先生成分镜，再自动匹配素材")
                 if type(online)!=bool:raise ValueError("联网选项不正确")
@@ -102,6 +106,7 @@ class Jobs:
             data={"id":jid,"kind":kind,"project_id":pid,"revision":revision,"scene_id":scene_id,"created":time.time(),"status":"queued","message":"任务已排队"}
             if kind=="cover":
                 data["cover_input"]=cover_input
+            if kind=="opening":data["opening_input"]=opening_input
             if kind=="materials":data["online"]=online
             if kind=="render":
                 path=self.ws.path(pid)/f"run-{jid}.json"
@@ -127,7 +132,7 @@ class Jobs:
                 for line in path.read_text(errors="replace").splitlines()[-200:]:
                     try:
                         e=json.loads(line)
-                        if e.get("event") in {"stage_started","stage_completed","failed"}:
+                        if e.get("event") in {"stage_started","stage_completed","stage_recovery","failed"}:
                             events.append(e)
                     except ValueError:
                         pass
@@ -143,76 +148,109 @@ def work(root,jid):
         def update(status="running",message="处理中",**more):
             data.update(status=status,message=message,updated=time.time(),**more)
             write_json(folder/"job.json",data)
-        try:
-            update(message="后台任务已开始")
-            if data["kind"]=="test":
-                result,usage=call_model(ws.settings(True),[{"role":"system","content":"Return JSON only."},{"role":"user","content":"Return a JSON object with a single key ok and value true."}])
-                if result.get("ok") is not True:
-                    raise ValueError("模型响应未通过 JSON 连通测试")
-                update("completed","模型连接与 JSON 响应测试通过",result={"calls":[usage]})
-            elif data["kind"]=="plan":
-                doc=read_json(folder/"input.json")
-                def validate(story,knowledge):
-                    from .planning import validate_plan
-                    clean=validate_plan(story,knowledge)
-                    ws.compile(doc,clean,knowledge)
-                    return clean
-                # Generated video titles change after planning. Keep the imported
-                # topic stable so the same course/settings can reuse its cache.
-                original=ws.path(doc["id"])/"revisions/r0001.json"
-                topic=read_json(original)["title"] if original.is_file() else doc["title"]
-                result=plan(doc["source"],{**doc["brief"],"topic":topic},ws.settings(True),ws.path(doc["id"])/"planning-cache",validate,
-                            lambda stage,message:update(message=message))
-                write_json(folder/"planning-result.json",result)
-                # Optimistic revision check: never replace edits made during a request.
-                try:
-                    new=ws.update(doc["id"],data["revision"],{"knowledge":result["knowledge"],"storyboard":result["storyboard"],"planning":{k:v for k,v in result.items() if k not in {"knowledge","storyboard"}}})
-                    update("completed","知识和分镜已生成，请逐镜审阅",result={"revision":new["revision"],"calls":result["calls"],"cache_hit":result["cache_hit"],"new_api_calls":result["new_api_calls"]})
-                except Exception:
-                    update("conflict","模型结果已保存，但项目期间有修改；请下载本次结果后手工合并",result={"file":"planning-result.json","calls":result["calls"]})
-            elif data["kind"]=="materials":
-                from .materials import run
-                doc=read_json(folder/"input.json")
-                try:
-                    result=run(ws,doc,folder,lambda message:update(message=message),online=data.get("online",True))
-                    update("completed",f"已为 {result['applied']} 个分镜放入素材；请预览，不合适可手动替换",result=result,finished=time.time())
-                except Exception as exc:
-                    from .workspace import Conflict
-                    if not isinstance(exc,Conflict):raise
-                    usage=read_json(folder/"material-usage.json") if (folder/"material-usage.json").is_file() else {}
-                    update("conflict","匹配结果已保留，期间项目有修改；未覆盖新版本",result={"file":"material-result.json",**usage},finished=time.time())
-            elif data["kind"]=="cover":
-                from .covers import generate
-                update("waiting","等待本机制作队列，随后自动生成封面")
-                with (ws.web/"media.lock").open("a+") as media_guard:
-                    fcntl.flock(media_guard,fcntl.LOCK_EX)
-                    update(message="正在排版封面与检查图片尺寸")
-                    result=generate(ws,data["project_id"],jid,data["cover_input"])
-                    update("completed","封面已生成，可以预览并下载",result=result,finished=time.time())
-            else:
-                update("waiting","等待本机制作队列；其他镜头任务完成后自动继续")
-                with (ws.web/"media.lock").open("a+") as media_guard:
-                    fcntl.flock(media_guard,fcntl.LOCK_EX)
-                    update(message="正在制作：配音、字幕、画面、混音与技术检查")
-                    config=Path(data["config_path"])
-                    with (folder/"engine.jsonl").open("wb") as log:
-                        process=subprocess.Popen([sys.executable,"-m","video_agent","run",str(config)],cwd=ws.root,stdout=log,stderr=subprocess.STDOUT)
-                        code=process.wait()
-                    if code:
-                        # Engine failures may include arbitrary document paths, but never API settings.
-                        tail=(folder/"engine.jsonl").read_text(errors="replace")[-3500:]
-                        raise ValueError("制作未完成。可修正后重试，成功阶段会复用。\n"+tail)
-                    result=read_json(config.parent/"outputs"/(config.stem+"-latest.json"))
-                    out=Path(result["output_directory"])
-                    audit=read_json(out/"audit.json")
-                    write_json(folder/"render-result.json",result)
-                    update("completed","制作完成；技术检查通过，仍可播放检查语气和画面",result={"output_directory":str(out),"files":sorted(p.name for p in out.iterdir() if p.is_file()),"audit":audit,"counts":result["counts"],"source_revision":data["revision"]})
-        except BaseException as exc:
-            message=str(exc)
-            key=ws.settings(True).get("api_key","")
-            if key:
-                message=message.replace(key,"[已隐藏]")
-            extra={}
-            if data.get("kind")=="materials" and (folder/"material-usage.json").is_file():
-                extra["result"]=read_json(folder/"material-usage.json")
-            update("failed",message[:4500],finished=time.time(),**extra)
+        for execution_attempt in range(2):
+            try:
+                update(message="后台任务已开始")
+                if data["kind"]=="test":
+                    result,usage=call_model({**ws.settings(True),"_notify":lambda text:update(message=text)},[{"role":"system","content":"Return JSON only."},{"role":"user","content":"Return a JSON object with a single key ok and value true."}])
+                    if result.get("ok") is not True:
+                        raise ValueError("模型响应未通过 JSON 连通测试")
+                    update("completed","模型连接与 JSON 响应测试通过",result={"calls":[usage]})
+                elif data["kind"]=="plan":
+                    doc=read_json(folder/"input.json")
+                    def validate(story,knowledge):
+                        from .planning import validate_plan
+                        clean=validate_plan(story,knowledge)
+                        ws.compile(doc,clean,knowledge)
+                        return clean
+                    # Generated video titles change after planning. Keep the imported
+                    # topic stable so the same course/settings can reuse its cache.
+                    original=ws.path(doc["id"])/"revisions/r0001.json"
+                    topic=read_json(original)["title"] if original.is_file() else doc["title"]
+                    result=plan(doc["source"],{**doc["brief"],"topic":topic},ws.settings(True),ws.path(doc["id"])/"planning-cache",validate,
+                                lambda stage,message:update(message=message))
+                    write_json(folder/"planning-result.json",result)
+                    # Optimistic revision check: never replace edits made during a request.
+                    try:
+                        new=ws.update(doc["id"],data["revision"],{"knowledge":result["knowledge"],"storyboard":result["storyboard"],"planning":{k:v for k,v in result.items() if k not in {"knowledge","storyboard"}}})
+                        update("completed","知识和分镜已生成，请逐镜审阅",result={"revision":new["revision"],"calls":result["calls"],"cache_hit":result["cache_hit"],"new_api_calls":result["new_api_calls"],"repairs":result.get("repairs",[]),"reused_stages":result.get("reused_stages",[])})
+                    except Conflict:
+                        update("conflict","模型结果已保存，但项目期间有修改；请下载本次结果后手工合并",result={"file":"planning-result.json","calls":result["calls"]})
+                elif data["kind"]=="opening":
+                    from .openings import search, search_apply, import_clip
+                    request=data["opening_input"];doc=read_json(folder/"input.json")
+                    try:
+                        notify=lambda message:update(message=message)
+                        if request['mode']=='search_apply':result=search_apply(ws,doc,request['data'],folder,notify)
+                        elif request['mode']=='search':result=search(ws,doc['id'],request['data'],notify)
+                        else:result=import_clip(ws,doc,request['data'],folder,notify)
+                        write_json(folder/"opening-result.json",result)
+                        if request['mode']=='search_apply':
+                            status='completed' if result['applied'] else 'needs_input'
+                            message=('新片头已接入，保留原声。请预览剪点并重新导出成片。' if result['applied'] else '已检索，但片头未接入。请查看候选、调整原话或剪点；当前片头未改变。')
+                        else:
+                            status='completed'
+                            message=(f"找到 {len(result['candidates'])} 条候选，尚未接入；点击「查看候选」选择使用" if request["mode"]=="search" else "片头已接入并保留原声；请预览并重新导出成片")
+                        update(status,message,result=result,finished=time.time())
+                    except Conflict as exc:
+                        update("conflict",str(exc),finished=time.time())
+                elif data["kind"]=="materials":
+                    from .materials import run
+                    doc=read_json(folder/"input.json")
+                    try:
+                        result=run(ws,doc,folder,lambda message:update(message=message),online=data.get("online",True))
+                        update("completed",f"已为 {result['applied']} 个分镜放入素材；请预览，不合适可手动替换",result=result,finished=time.time())
+                    except Exception as exc:
+                        if not isinstance(exc,Conflict):raise
+                        usage=read_json(folder/"material-usage.json") if (folder/"material-usage.json").is_file() else {}
+                        update("conflict","匹配结果已保留，期间项目有修改；未覆盖新版本",result={"file":"material-result.json",**usage},finished=time.time())
+                elif data["kind"]=="cover":
+                    from .covers import generate
+                    update("waiting","等待本机制作队列，随后自动生成封面")
+                    with (ws.web/"media.lock").open("a+") as media_guard:
+                        fcntl.flock(media_guard,fcntl.LOCK_EX)
+                        update(message="正在排版封面与检查图片尺寸")
+                        result=generate(ws,data["project_id"],jid,data["cover_input"])
+                        update("completed","封面已生成，可以预览并下载",result=result,finished=time.time())
+                else:
+                    update("waiting","等待本机制作队列；其他镜头任务完成后自动继续")
+                    with (ws.web/"media.lock").open("a+") as media_guard:
+                        fcntl.flock(media_guard,fcntl.LOCK_EX)
+                        update(message="正在制作：配音、字幕、画面、混音与技术检查")
+                        config=Path(data["config_path"])
+                        with (folder/"engine.jsonl").open("wb") as log:
+                            process=subprocess.Popen([sys.executable,"-m","video_agent","run",str(config)],cwd=ws.root,stdout=log,stderr=subprocess.STDOUT)
+                            code=process.wait()
+                        if code:
+                            # Engine failures may include arbitrary document paths, but never API settings.
+                            tail=(folder/"engine.jsonl").read_text(errors="replace")[-3500:]
+                            raise ValueError("制作未完成。可修正后重试，成功阶段会复用。\n"+tail)
+                        result=read_json(config.parent/"outputs"/(config.stem+"-latest.json"))
+                        out=Path(result["output_directory"])
+                        audit=read_json(out/"audit.json")
+                        write_json(folder/"render-result.json",result)
+                        update("completed","制作完成；技术检查通过，仍可播放检查语气和画面",result={"output_directory":str(out),"files":sorted(p.name for p in out.iterdir() if p.is_file()),"audit":audit,"counts":result["counts"],"source_revision":data["revision"]})
+                return
+            except BaseException as exc:
+                message=str(exc)
+                key=ws.settings(True).get("api_key","")
+                if key:message=message.replace(key,"[已隐藏]")
+                from .recovery import decision
+                recovery=decision(message,data.get('kind'))
+                if isinstance(exc,Exception) and recovery['retry'] and execution_attempt==0:
+                    event={"attempt":1,"code":recovery['code'],"message":message[:500],"action":recovery['action'],"time":time.time()}
+                    update(message="检测到临时故障，正在自动恢复一次；成功阶段将复用",recovery_history=[*data.get('recovery_history',[]),event])
+                    time.sleep(1)
+                    continue
+                extra={"recovery":{**recovery,"retry":False,"automatic_attempts":execution_attempt,"exhausted":bool(recovery['retry'])}}
+                if data.get("kind")=="materials" and (folder/"material-usage.json").is_file():
+                    extra["result"]=read_json(folder/"material-usage.json")
+                if data.get("kind")=="plan":
+                    doc=read_json(folder/'input.json')
+                    # Only expose the usage belonging to this immutable input.
+                    candidates=[p for p in (ws.path(doc['id'])/'planning-cache').glob('*-usage.json') if p.stat().st_mtime>=data['created']]
+                    if candidates:
+                        latest=max(candidates,key=lambda p:p.stat().st_mtime)
+                        extra['result']=read_json(latest)
+                update("failed",message[:4500],finished=time.time(),**extra)
+                return
