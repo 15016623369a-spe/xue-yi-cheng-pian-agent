@@ -393,24 +393,42 @@ def import_clip(ws,doc,options,work,notify=lambda *_:None):
     else:original=download(ws,url,start,end,folder(ws,doc['id'])/'downloads',notify);start=0;end=o['end']-o['start']
     info=probe(runtime['ffprobe'],original)
     if not any(s.get('codec_type')=='audio' for s in info.get('streams',[])):raise ValueError('该片段没有音轨，不能作为原声片头')
-    result,preview,piece_seconds,seconds=prepare_clip(ws,doc,original,start,end,o['append'],work,notify)
+    # Preserve a prepared original for restore. Detect before letterboxing so
+    # portrait platform logos still count as corners of their source frame.
+    raw_work=work/'original-prepared';raw_work.mkdir(exist_ok=True)
+    result,preview,piece_seconds,seconds=prepare_clip(ws,doc,original,start,end,o['append'],raw_work,notify)
+    uncleaned=result
+    cleanup_report={'status':'disabled','regions':[]}
+    if ws.preferences()['auto_clean_online']:
+        from .cleanup import process
+        cut=work/'source-piece.mov'
+        run_command([runtime['ffmpeg'],'-v','error','-y','-ss',str(start),'-i',str(original),'-t',str(end-start),'-map','0:v:0','-map','0:a:0',
+                     '-vf','scale=trunc(iw/2)*2:trunc(ih/2)*2','-c:v','libx264','-preset','fast','-crf','18','-pix_fmt','yuv420p','-c:a','pcm_s16le',str(cut)],work/'source-piece.log')
+        cleaned,cleanup_report=process(ws,cut,work/'cleanup',notify=notify)
+        if cleanup_report['status']=='processed':
+            clean_work=work/'clean-prepared';clean_work.mkdir(exist_ok=True)
+            result,preview,piece_seconds,seconds=prepare_clip(ws,doc,cleaned,0,end-start,o['append'],clean_work,notify)
     old=doc['config'].get('opening') or doc.get('opening_selection')
     sha=file_hash(result);key='opening_'+sha[:16];preview_key=key+'_preview'
     with ws.locked_project(doc['id']):
         current=ws.get(doc['id'])
         if current['revision']!=doc['revision']:raise Conflict('制作期间项目已修改，片头结果已保留，未覆盖当前项目')
         dest=ws.path(doc['id'])/'assets/openings'/sha;dest.mkdir(parents=True,exist_ok=True)
+        original_copy=dest/'original.mov'
+        if not original_copy.is_file():shutil.copy2(uncleaned,original_copy)
         for path in [result,preview]:
             temp=dest/(path.name+'.tmp');shutil.copy2(path,temp);os.replace(temp,dest/path.name)
         segment={'url':url,'platform':candidate['platform'],'title':candidate['title'],'start':round(source_start,3),'seconds':round(piece_seconds,3),'quote_verified':quote_verified,'quote':(report.get('criteria') or {}).get('quote','') if quote_verified else ''}
         segments=copy.deepcopy(old.get('segments',[])) if o['append'] and old else []
         if o['append'] and old and not segments:segments=[{'title':old.get('title','原有片头'),'asset':old['asset']}]
         segments.append(segment)
+        original_key=key+'_original'
+        current['config']['assets'][original_key]=str(original_copy.relative_to(ws.path(doc['id'])))
         for asset,path in [(key,result),(preview_key,preview)]:
             current['config']['assets'][asset]=str((dest/path.name).relative_to(ws.path(doc['id'])))
-            current['config'].setdefault('asset_metadata',{})[asset]={'name':candidate['title'],'kind':'video','seconds':seconds,'sha256':file_hash(path),'source':{'provider':PLATFORMS[candidate['platform']],'page':url,'license':'由使用者确认素材使用范围'}}
+            current['config'].setdefault('asset_metadata',{})[asset]={'name':candidate['title'],'kind':'video','seconds':seconds,'sha256':file_hash(path),'cleanup':cleanup_report,'cleanup_original_asset':original_key,'source':{'provider':PLATFORMS[candidate['platform']],'page':url,'license':'由使用者确认素材使用范围'}}
         current['config']['opening']={'asset':key,'preview_asset':preview_key,'title':('多切片片头 · ' if len(segments)>1 else '')+candidate['title'],
-                                      'description':'网上候选素材截取，保留原声；具体来源和剪点见 segments。','captions':old.get('captions',[]) if o['append'] and old else [],'segments':segments,'seconds':seconds}
+                                      'description':'网上候选素材截取，保留原声；具体来源和剪点见 segments。','captions':old.get('captions',[]) if o['append'] and old else [],'segments':segments,'seconds':seconds,'cleanup':cleanup_report}
         if current.get('storyboard'):current['config']=ws.compile(current)
         current.update(revision=current['revision']+1,updated=time.time(),approved=False,review={});ws._write(ws.path(doc['id']),current)
     imported={'revision':current['revision'],'candidate':candidate,'seconds':seconds,'quote_verified':quote_verified,'appended':bool(o['append'] and old),'preview_asset':preview_key,'source':segment}

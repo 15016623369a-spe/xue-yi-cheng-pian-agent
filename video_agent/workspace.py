@@ -70,6 +70,23 @@ class Workspace:
             return d
         return {**{k:v for k,v in d.items() if k!="api_key"},"has_key":bool(d.get("api_key")),"configured":bool(d.get("api_key") and d.get("base_url") and d.get("model"))}
 
+    def preferences(self):
+        p=self.web/"creation.json"
+        saved=read_json(p) if p.is_file() else {}
+        return {"series_name":saved.get("series_name",""),"auto_clean_online":saved.get("auto_clean_online",True)}
+
+    def save_preferences(self,data):
+        with LOCK:
+            old=self.preferences()
+            series=data.get("series_name",old["series_name"])
+            clean=data.get("auto_clean_online",old["auto_clean_online"])
+            if not isinstance(series,str) or len(series.strip())>40 or any(ord(c)<32 for c in series):
+                raise ValueError("系列名最多40字，不能含换行")
+            if type(clean)!=bool:raise ValueError("自动清理选项格式不正确")
+            result={"series_name":series.strip(),"auto_clean_online":clean}
+            write_json(self.web/"creation.json",result)
+            return result
+
     def save_settings(self,data):
         with LOCK:
             old=self.settings(True)
@@ -123,7 +140,7 @@ class Workspace:
         config["scenes"]=[]
         config["title"]="新学习视频"
         # A visual/voice preset does not select a course or its spoken opening.
-        config["theme"]={"label":"学习分享","series":"本期内容","side_label":"本期重点"}
+        config["theme"]={"label":"学习分享","series":self.preferences()["series_name"] or "本期内容","side_label":"本期重点"}
         config.pop("opening",None)
         return config
 
@@ -239,6 +256,17 @@ class Workspace:
             if type(seconds)!=int or not 20<=seconds<=240:
                 raise ValueError("目标时长需为 20–240 秒")
             doc["config"]["theme"]=doc["config"].get("theme") or {"label":"学习分享","series":"本期内容","side_label":"本期重点"}
+            if "series_name" in changes:
+                series=changes["series_name"]
+                if not isinstance(series,str) or len(series.strip())>40 or any(ord(c)<32 for c in series):
+                    raise ValueError("系列名最多40字，不能含换行")
+                doc["config"]["theme"]["series"]=series.strip()
+            if "episode_title" in changes:
+                title=changes["episode_title"]
+                if not isinstance(title,str) or not 1<=len(title.strip())<=120 or any(ord(c)<32 for c in title):
+                    raise ValueError("本期标题需为1–120字，不能含换行")
+                doc["title"]=title.strip();doc["config"]["title"]=title.strip()
+                if doc.get("storyboard"):doc["storyboard"]["title"]=title.strip()
             if doc["knowledge"]:
                 validate_knowledge(doc["knowledge"],doc["source"])
             if "media" in changes:
@@ -295,7 +323,7 @@ class Workspace:
             return doc
 
     def export_md(self,doc):
-        text=[f"# {doc['title']}",f"版本：{doc['revision']}；人工审阅：{'已确认' if doc['approved'] else '待审阅'}", "\n## 受众与方向",doc["brief"]["audience"],doc["brief"]["direction"]]
+        text=[f"# {doc['title']}",f"系列：{doc['config'].get('theme',{}).get('series','')}",f"版本：{doc['revision']}；人工审阅：{'已确认' if doc['approved'] else '待审阅'}", "\n## 受众与方向",doc["brief"]["audience"],doc["brief"]["direction"]]
         for s in (doc.get("storyboard") or {}).get("scenes",[]):
             text += [f"\n## {s['id']}：{s['title']}",f"知识引用：{', '.join(s['knowledge_ids'])}",f"口播：{s['speech']}",f"类比：{s['analogy']['mapping']}",f"边界：{s['analogy']['boundary']}","```json",json.dumps({"visual":s["visual"],"events":s.get("events",[]),"pronunciations":s.get("pronunciations",{})},ensure_ascii=False,indent=2),"```"]
         text += ["\n## 发布文案",(doc.get("storyboard") or {}).get("publishing_copy","")]

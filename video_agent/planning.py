@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .util import digest, read_json, write_json
 
-PROMPT_VERSION = "grounded-storyboard-4-recovery"
+PROMPT_VERSION = "grounded-storyboard-5-episode-title"
 DEFAULT_BRIEF = {"audience":"对 AI 感兴趣、熟悉 CS 的初学者", "direction":"用 CS 报点、战术和比赛的类比解释，梗必须服务知识；原创改写不冒充人物原话。", "style":"cs", "seconds":180}
 
 
@@ -324,6 +324,7 @@ def plan(source: str, brief: dict, settings: dict, cache: Path, validate_storybo
         "类比必须符合边界；梗是原创教学改写，不能编造人物或赛事原话。不强行加梗。每镜约30–90个汉字，估计全片按每秒5字且预留12秒片头，尽量不超设定时长。"
         "模板只允许flow（2–4个steps对象label/detail）、branch（input/output/bypass/formula字符串，steps为1–2个字符串）、calculation（lines为1–4行字符串）。"
         "事件anchor必须从本镜speech原样复制，连续且只出现一次；不能复制原资料中的另一种说法。每个visual都有note/side，可有conclusion。标题最多24字，图中文字简短，事件sound只允许click/beep/pop/whoosh/error。不要指定素材或音色路径。"
+        "本期片名需要根据实际知识单独起，具体、通俗且有吸引力，不沿用文件名，不机械套用系列名，不夸大或捏造结论。系列名只用来理解定位，不在口播中重复报幕。"
         "受众与方向："+json.dumps(brief,ensure_ascii=False)+"\n知识："+json.dumps(knowledge,ensure_ascii=False)+"\n输出格式："+schema)
     saved_draft=load_checkpoint('draft');storyboard=None
     if saved_draft and saved_draft.get('knowledge_sha256')==digest(knowledge):

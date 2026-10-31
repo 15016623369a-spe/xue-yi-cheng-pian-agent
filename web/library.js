@@ -5,6 +5,7 @@ function safeSource(url){try{const u=new URL(url);return u.protocol==='https:'?e
 function sourceInfo(source){if(!source?.page)return '本地素材';const url=safeSource(source.page);return `${esc(source.provider||'联网素材')}${source.license?' · '+esc(source.license):''}${url?` · <a href="${url}" target="_blank" rel="noopener noreferrer">查看来源 ↗</a>`:''}`;}
 function materialControls(){return `<section class="panel material-controls" aria-label="自动匹配素材"><div><h2>让素材跟着讲解走</h2><p class="muted">先匹配资源库，再联网找相关图片。已选素材保留；匹配后仍可逐镜替换。</p></div><div class="material-actions"><label class="check"><input id="material-online" type="checkbox" checked>联网补充（Wikimedia）</label><button class="primary" id="match-materials" ${state.settings.configured?'':'disabled'}>✦ 自动找素材并匹配</button><button class="secondary" id="story-library">打开资源库</button></div><p class="caption">点击后将本次分镜摘要和资源名称／标签交给已配置模型；最多 2 次模型请求、6 组联网搜索。当前按文字描述匹配，尚不代表逐帧识别素材。找不到合适的会留空。</p></section>`;}
 function bindMaterials(){
+ bindCleanupButtons();
  bind('#match-materials','click',guarded(async()=>{const online=$('#material-online').checked;await save();const d=state.doc;await api(`/api/projects/${d.id}/materials`,{revision:d.revision,online});toast('开始匹配素材，进度见「制作动态」。已有素材会保留。');await poll();}));
  bind('#story-library','click',guarded(()=>openLibrary()));
  document.querySelectorAll('[data-library-event]').forEach(el=>el.onclick=guarded(()=>openLibrary({scene:state.doc.storyboard.scenes[state.scene].id,event:el.dataset.libraryEvent,kind:el.dataset.libraryKind})));

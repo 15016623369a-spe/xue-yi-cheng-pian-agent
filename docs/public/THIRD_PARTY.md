@@ -24,6 +24,7 @@ README 的导航、技术表格与架构介绍组织方式参考 [Ragent](https:
 | Whisper | https://github.com/openai/whisper | ASR 模型来源；本项目通过 MLX 转换版本执行 |
 | NumPy / SoundFile | https://numpy.org/ / https://python-soundfile.readthedocs.io/ | 本地音频数值与文件操作 |
 | Wikimedia Commons | https://commons.wikimedia.org/ | 图片检索；每个文件分别保留来源与许可 |
+| Apple Vision / Swift | https://developer.apple.com/documentation/vision | macOS本机文字识别；调用系统框架及系统编译器，不随仓库分发其二进制 |
 
 Node 依赖清单见 `renderer/package.json`。模型及媒体工作环境未打包进主 Python 分发，本仓库没有重新分发 Chrome、FFmpeg 二进制或模型权重。
 

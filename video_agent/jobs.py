@@ -63,9 +63,9 @@ class Jobs:
                 items.append(item)
         return sorted(items,key=lambda x:x["created"],reverse=True)[:50]
 
-    def create(self,kind,pid=None,revision=None,scene_id=None,cover=None,online=True,opening=None):
+    def create(self,kind,pid=None,revision=None,scene_id=None,cover=None,online=True,opening=None,cleanup=None):
         with LOCK:
-            if kind not in {"plan","render","test","cover","materials","opening"}:
+            if kind not in {"plan","render","test","cover","materials","opening","titles","cleanup"}:
                 raise ValueError("不支持的任务类型")
             doc=None
             if kind=="cover":
@@ -77,13 +77,13 @@ class Jobs:
                     raise ValueError("请填写封面设置")
                 cover_input=prepare(self.ws,pid,cover.get("revision"),cover.get("settings"))
                 revision=doc["revision"]
-            if kind in {"plan","render","materials","opening"}:
+            if kind in {"plan","render","materials","opening","titles","cleanup"}:
                 doc=self.ws.get(pid)
                 if doc["revision"]!=revision:
                     raise ValueError("请先保存并刷新至最新项目版本")
                 if any(j["status"] in {"queued","running","waiting"} for j in self.list(pid)):
                     raise ValueError("该项目已有后台任务，请等待完成后再开始")
-            if kind in {"plan","test","materials"} and not self.ws.settings()["configured"]:
+            if kind in {"plan","test","materials","titles"} and not self.ws.settings()["configured"]:
                 raise ValueError("请先配置模型 API；不会用假分镜代替模型结果")
             if kind=="opening":
                 from .openings import criteria, import_options
@@ -92,6 +92,9 @@ class Jobs:
             if kind=="materials":
                 if not doc.get("storyboard"):raise ValueError("请先生成分镜，再自动匹配素材")
                 if type(online)!=bool:raise ValueError("联网选项不正确")
+            if kind=="cleanup":
+                from .cleanup import job_options
+                cleanup_input=job_options(doc,cleanup)
             if kind=="render":
                 if not scene_id and not doc["approved"]:
                     raise ValueError("整片导出前，请先确认知识与分镜已审阅")
@@ -107,6 +110,7 @@ class Jobs:
             if kind=="cover":
                 data["cover_input"]=cover_input
             if kind=="opening":data["opening_input"]=opening_input
+            if kind=="cleanup":data["cleanup_input"]=cleanup_input
             if kind=="materials":data["online"]=online
             if kind=="render":
                 path=self.ws.path(pid)/f"run-{jid}.json"
@@ -167,7 +171,7 @@ def work(root,jid):
                     # topic stable so the same course/settings can reuse its cache.
                     original=ws.path(doc["id"])/"revisions/r0001.json"
                     topic=read_json(original)["title"] if original.is_file() else doc["title"]
-                    result=plan(doc["source"],{**doc["brief"],"topic":topic},ws.settings(True),ws.path(doc["id"])/"planning-cache",validate,
+                    result=plan(doc["source"],{**doc["brief"],"topic":topic,"series_name":doc["config"].get("theme",{}).get("series","")},ws.settings(True),ws.path(doc["id"])/"planning-cache",validate,
                                 lambda stage,message:update(message=message))
                     write_json(folder/"planning-result.json",result)
                     # Optimistic revision check: never replace edits made during a request.
@@ -176,6 +180,22 @@ def work(root,jid):
                         update("completed","知识和分镜已生成，请逐镜审阅",result={"revision":new["revision"],"calls":result["calls"],"cache_hit":result["cache_hit"],"new_api_calls":result["new_api_calls"],"repairs":result.get("repairs",[]),"reused_stages":result.get("reused_stages",[])})
                     except Conflict:
                         update("conflict","模型结果已保存，但项目期间有修改；请下载本次结果后手工合并",result={"file":"planning-result.json","calls":result["calls"]})
+                elif data["kind"]=="titles":
+                    from .titles import generate
+                    doc=read_json(folder/"input.json")
+                    try:
+                        result=generate(ws,doc,folder,lambda message:update(message=message))
+                        update("completed","标题候选已生成，请选择本期标题",result=result,finished=time.time())
+                    except Conflict as exc:
+                        update("conflict",str(exc),finished=time.time())
+                elif data["kind"]=="cleanup":
+                    from .cleanup import apply
+                    doc=read_json(folder/"input.json")
+                    with (ws.web/"media.lock").open('a+') as media_guard:
+                        fcntl.flock(media_guard,fcntl.LOCK_EX)
+                        result=apply(ws,doc,data['cleanup_input'],folder,lambda message:update(message=message))
+                    update("completed" if result['applied'] else "needs_input",
+                           "素材处理已保存，请预览后重新导出" if result['applied'] else result['report'].get('message','需要框选水印区域'),result=result,finished=time.time())
                 elif data["kind"]=="opening":
                     from .openings import search, search_apply, import_clip
                     request=data["opening_input"];doc=read_json(folder/"input.json")
@@ -235,6 +255,9 @@ def work(root,jid):
                 message=str(exc)
                 key=ws.settings(True).get("api_key","")
                 if key:message=message.replace(key,"[已隐藏]")
+                if isinstance(exc,Conflict):
+                    update("conflict",message[:4500],finished=time.time())
+                    return
                 from .recovery import decision
                 recovery=decision(message,data.get('kind'))
                 if isinstance(exc,Exception) and recovery['retry'] and execution_attempt==0:
@@ -245,6 +268,8 @@ def work(root,jid):
                 extra={"recovery":{**recovery,"retry":False,"automatic_attempts":execution_attempt,"exhausted":bool(recovery['retry'])}}
                 if data.get("kind")=="materials" and (folder/"material-usage.json").is_file():
                     extra["result"]=read_json(folder/"material-usage.json")
+                if data.get("kind")=="titles" and (folder/"title-usage.json").is_file():
+                    extra["result"]=read_json(folder/"title-usage.json")
                 if data.get("kind")=="plan":
                     doc=read_json(folder/'input.json')
                     # Only expose the usage belonging to this immutable input.

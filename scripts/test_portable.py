@@ -13,5 +13,6 @@ for pattern in ['test_state.py','test_planning_sources.py','test_pronunciation.p
 sys.path.insert(0,str(root/'tests'))
 suite.addTests(loader.loadTestsFromName('test_openings.PureOpeningTests'))
 suite.addTests(loader.loadTestsFromName('test_openings.WorkspaceOpeningTests'))
+suite.addTests(loader.loadTestsFromName('test_editorial.EditorialTests'))
 result=unittest.TextTestRunner(verbosity=2).run(suite)
 raise SystemExit(0 if result.wasSuccessful() else 1)

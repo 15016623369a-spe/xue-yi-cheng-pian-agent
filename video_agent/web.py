@@ -69,9 +69,10 @@ class Handler(BaseHTTPRequestHandler):
             path=urllib.parse.urlsplit(self.path).path
             ws=self.server.ws;jobs=self.server.jobs
             if path=="/api/bootstrap":
-                return self.send_json({"token":self.server.token,"settings":ws.settings(),"projects":ws.list(),"version":"0.2 · 本地创作工作台"})
+                return self.send_json({"token":self.server.token,"settings":ws.settings(),"preferences":ws.preferences(),"projects":ws.list(),"version":"0.2 · 本地创作工作台"})
             if path=="/api/projects":return self.send_json(ws.list())
             if path=="/api/settings":return self.send_json(ws.settings())
+            if path=="/api/preferences":return self.send_json(ws.preferences())
             if path=="/api/library":
                 from .library import catalogue
                 return self.send_json({"items":catalogue(ws)})
@@ -93,6 +94,10 @@ class Handler(BaseHTTPRequestHandler):
             if opening_match:
                 from .openings import latest
                 return self.send_json(latest(ws,opening_match[1]))
+            title_match=re.fullmatch(r"/api/projects/(web-[a-f0-9]{12})/titles",path)
+            if title_match:
+                from .titles import latest
+                return self.send_json(latest(ws,title_match[1]))
             asset_match=re.fullmatch(r"/api/projects/(web-[a-f0-9]{12})/assets/([A-Za-z0-9_-]+)",path)
             if asset_match:
                 from .util import resolve_path
@@ -111,7 +116,7 @@ class Handler(BaseHTTPRequestHandler):
                 job=jobs.progress(m[1])
                 if m[2]:return self.job_file(job,m[2])
                 return self.send_json(job)
-            static={"/":"index.html","/app.js":"app.js","/library.js":"library.js","/opening.js":"opening.js","/style.css":"style.css",
+            static={"/":"index.html","/app.js":"app.js","/library.js":"library.js","/opening.js":"opening.js","/editor.js":"editor.js","/style.css":"style.css",
                     "/player.html":"player.html","/player.js":"player.js","/player.css":"player.css"}
             if path not in static:return self.send_json({"error":"页面不存在"},404)
             p=ROOT/"web"/static[path]
@@ -151,15 +156,20 @@ class Handler(BaseHTTPRequestHandler):
             if opening_match:
                 return self.send_json(jobs.create("opening",opening_match[1],data.get("revision"),opening=data),202)
             if path=="/api/settings":return self.send_json(ws.save_settings(data))
+            if path=="/api/preferences":return self.send_json(ws.save_preferences(data))
+            title_apply=re.fullmatch(r"/api/projects/(web-[a-f0-9]{12})/titles/apply",path)
+            if title_apply:
+                from .titles import apply
+                return self.send_json(apply(ws,title_apply[1],data.get('revision'),data.get('candidate')))
             if path=="/api/settings/test":return self.send_json(jobs.create("test"),202)
             if path=="/api/projects":return self.send_json(ws.create(data),201)
             if path=="/api/sample":return self.send_json(ws.sample(),201)
-            m=re.fullmatch(r"/api/projects/(web-[a-f0-9]{12})/(save|approve|plan|render|materials)",path)
+            m=re.fullmatch(r"/api/projects/(web-[a-f0-9]{12})/(save|approve|plan|render|materials|titles|cleanup)",path)
             if m:
                 pid,action=m[1],m[2]
                 if action=="save":return self.send_json(ws.update(pid,data.get("revision"),data))
                 if action=="approve":return self.send_json(ws.approve(pid,data.get("revision")))
-                return self.send_json(jobs.create(action,pid,data.get("revision"),data.get("scene_id"),online=data.get("online",True)),202)
+                return self.send_json(jobs.create(action,pid,data.get("revision"),data.get("scene_id"),online=data.get("online",True),cleanup=data if action=='cleanup' else None),202)
             return self.send_json({"error":"操作不存在"},404)
         except Conflict as exc:return self.send_json({"error":str(exc)},409)
         except FileNotFoundError:return self.send_json({"error":"项目不存在"},404)
@@ -169,7 +179,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def job_file(self,job,filename):
         result=job.get("result",{})
-        if filename in {"planning-result.json","material-result.json"} and job["status"]=="conflict":
+        if filename in {"planning-result.json","material-result.json","titles-result.json"} and job["status"]=="conflict":
             p=self.server.jobs.folder(job["id"])/filename
         else:
             if job["status"]!="completed" or filename not in result.get("files",[]):

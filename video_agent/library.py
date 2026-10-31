@@ -49,14 +49,17 @@ def catalogue(ws, private=False):
         found[rid]={"id":rid,"category":category,"name":labels.get("name") or meta.get("name") or name,
                     "tags":labels.get("tags",meta.get("tags",[])),"projects":[project] if project else [],"context":context[:2000],
                     "size":path.stat().st_size,"updated":path.stat().st_mtime,"source":meta.get("source",{}),
-                    "seconds":meta.get("seconds"),"url":"/api/library/"+rid+"/file","_path":path}
+                    "seconds":meta.get("seconds"),"cleanup":meta.get("cleanup"),"url":"/api/library/"+rid+"/file","_path":path,
+                    "_original_path":(ws.root/meta['original_path']).resolve() if meta.get('original_path') else None}
     for p in ws.projects.glob("web-*/workspace.json"):
         try:
             doc=read_json(p); cfg=doc["config"]; title=doc["title"]
             add(p.parent/"handoff.md","md",doc.get("source_name","handoff.md"),title)
             ref=cfg.get("voice",{}).get("reference_audio")
             if ref:add(resolve_path(p.parent,ref),"voice","参考音色 · "+Path(ref).name,title)
+            originals={m.get('cleanup_original_asset') for m in cfg.get('asset_metadata',{}).values() if isinstance(m,dict)}
             for key,value in cfg.get("assets",{}).items():
+                if key in originals or key.startswith('original_'):continue
                 asset=resolve_path(p.parent,value); ext=asset.suffix.lower(); meta=cfg.get("asset_metadata",{}).get(key,{})
                 category="sound" if ext in AUDIO_EXTS else "image" if ext in IMAGE_EXTS else "clip" if ext in VIDEO_EXTS else None
                 if not category:continue
@@ -91,7 +94,7 @@ def catalogue(ws, private=False):
             if duplicate["context"] and duplicate["context"] not in target["context"]:
                 target["context"]=(target["context"]+" "+duplicate["context"])[-2000:]
     entries=sorted(found.values(),key=lambda e:e["updated"],reverse=True)
-    return entries if private else [{k:v for k,v in e.items() if k!="_path"} for e in entries]
+    return entries if private else [{k:v for k,v in e.items() if not k.startswith('_')} for e in entries]
 
 
 def resource(ws,rid):
@@ -136,7 +139,12 @@ def register(ws,source,filename,category,metadata=None):
             meta={"name":filename,"seconds":seconds}
         else:
             local_source=stage/("input"+ext);shutil.copy2(source,local_source)
+            cleanup_report=None
+            if category in {'image','clip'} and (metadata or {}).get('source') and ws.preferences()['auto_clean_online']:
+                from .cleanup import process
+                local_source,cleanup_report=process(ws,local_source,stage/'cleanup')
             part,normalized,meta,_=normalize(local_source,filename,"sound" if category=="sound" else "media",runtime)
+            if cleanup_report:meta['cleanup']=cleanup_report
             actual={"sound":"sound","image":"image","video":"clip"}[meta["kind"]]
             if actual!=category and not (category=="image" and ext==".gif"):raise ValueError("文件与所选分类不匹配")
             category=actual
@@ -150,9 +158,9 @@ def register(ws,source,filename,category,metadata=None):
             rid=digest({"path":str(target.resolve()),"category":category})[:24]
             saved=index(ws)
             # Identical imports retain earlier source/labels rather than overwriting provenance.
-            saved["items"].setdefault(rid,{**meta,"category":category,"path":str(target.relative_to(ws.root)),"sha256":sha,"uploaded":time.time(),**(metadata or {})})
+            saved["items"].setdefault(rid,{**meta,"category":category,"path":str(target.relative_to(ws.root)),"original_path":str(original.relative_to(ws.root)),"sha256":sha,"uploaded":time.time(),**(metadata or {})})
             write_json(ws.web/"library.json",saved)
-    return {k:v for k,v in resource(ws,rid).items() if k!="_path"}
+    return {k:v for k,v in resource(ws,rid).items() if not k.startswith('_')}
 
 
 def attach(ws,pid,revision,ids,apply=None):
@@ -170,7 +178,14 @@ def attach(ws,pid,revision,ids,apply=None):
             if not dest.is_file() or file_hash(dest)!=sha:
                 temp=dest.with_suffix(dest.suffix+".tmp");shutil.copy2(src,temp);os.replace(temp,dest)
             doc["config"].setdefault("assets",{})[key]=str(dest.relative_to(ws.path(pid)))
-            doc["config"].setdefault("asset_metadata",{})[key]={"name":item["name"],"kind":{"image":"image","clip":"video","sound":"sound"}[item["category"]],"sha256":sha,"library_id":item["id"],"source":item["source"],"tags":item["tags"],"seconds":item["seconds"]}
+            doc["config"].setdefault("asset_metadata",{})[key]={"name":item["name"],"kind":{"image":"image","clip":"video","sound":"sound"}[item["category"]],"sha256":sha,"library_id":item["id"],"source":item["source"],"tags":item["tags"],"seconds":item["seconds"],"cleanup":item.get('cleanup')}
+            raw=item.get('_original_path')
+            if raw and raw.is_relative_to((ws.root/'assets/library').resolve()) and raw.is_file() and item.get('cleanup'):
+                original_dest=dest.parent/(file_hash(raw)+raw.suffix.lower())
+                if not original_dest.is_file():shutil.copy2(raw,original_dest)
+                original_key='original_'+digest(key)[:16]
+                doc['config']['assets'][original_key]=str(original_dest.relative_to(ws.path(pid)))
+                doc['config']['asset_metadata'][key]['cleanup_original_asset']=original_key
             mapping[item["id"]]=key
         if apply:apply(doc,mapping)
         if doc.get("storyboard"):doc["config"]=ws.compile(doc)

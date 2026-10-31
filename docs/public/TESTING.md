@@ -19,6 +19,7 @@ python3 scripts/test_portable.py
 | `test_voice_phrases.py` | 参考尾音、漏读、重复、数字与末句覆盖等文本门禁 |
 | `test_openings.py` 的 `PureOpeningTests` 与 `WorkspaceOpeningTests` | 平台URL、输入边界、HTML解析、匹配证据、唯一／重复短句定位、新项目不继承旧片头、接入失败不篡改项目、修订冲突和待处理状态 |
 | `test_public_checkout.py` | 无私人 fixture 导入、原创三镜示例、零网络调用、本地声音配置覆盖 |
+| `test_editorial.py` 的 `EditorialTests` | 默认系列隔离、当前讲稿起名、过期候选、缓存损坏、格式自动修正与请求上限、已登记素材限制及水印区域校验 |
 
 GitHub Actions 在 Python 3.11 / 3.12 的 Ubuntu 环境运行同一入口。这验证核心逻辑，不验证 Metal、真实配音或视频渲染。具体通过状态以仓库 Actions 的实际结果为准。
 
@@ -31,6 +32,8 @@ python3 -m unittest discover -s tests -v
 完整测试集中的一些测试需要 `config/local.json`、已安装媒体工具和 `projects/lesson04-validation/` 的私人验证课程及其严格登记配音。它们没有随公开仓库分发；缺少这些条件时，不应把完整命令当作干净仓库的开箱测试。
 
 保留这些测试是为了记录真实链路的回归约束，包括原声片头 PCM 接入、接入后预览与状态持久化、上传、音量隔离、播放器 Range、分镜设置快照、封面、素材匹配和模型调用模拟。后续会继续把依赖私人 fixture 的部分迁移到可公开生成的测试数据。
+
+`test_editorial.py`额外生成合成图片/声音测试素材，验证水印处理前后PCM一致、恢复原件、损坏缓存重建、片头在补边前识别，以及本地HTTP接口。媒体测试需要本机FFmpeg，不等于真实文字OCR准确率测试；真实OCR应另外用已知水印样本核对框选和输出画面。
 
 `scripts/verify_stage_a.py`、`verify_stage_b.py` 是开发期间的本地验收工具，也依赖对应验证项目和环境；不是公共快速开始入口。
 
